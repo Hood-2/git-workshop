@@ -1,1 +1,82 @@
+import typer
+import requests
+import json
+import csv
+from typing import Annotated
+import time
+import re
 
+app = typer.Typer()
+
+api_key = "b6e101bc38980bc8302263c0e78ff3f3"
+url = "https://api.itjobs.pt/job/list.json"
+response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+dados = response.json()
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+}
+
+def export_csv(data, filename="recent_jobs.csv"):
+    
+    if isinstance(data, list):
+        fieldnames = ["titulo"]
+        data = [{"titulo": item} for item in data]
+    elif isinstance(data, dict) and "results" in data:
+        fieldnames = ["titulo", "empresa", "descrição", "data de publicação", "salário", "localização"]
+        data = data["results"]
+    else:
+        print("Invalid data format for CSV export.")
+        return
+
+    with open(filename, "w", newline='', encoding="utf-8") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        if isinstance(data, list):
+            writer.writerows(data)
+        else:
+            for job in data:
+                writer.writerow({
+                    "titulo": job.get("title", "N/A"),
+                    "empresa": job.get("company", {}).get("name", "N/A"),
+                    "descrição": job.get("body", "N/A"),
+                    "data de publicação": job.get("publishedAt", "N/A"),
+                    "salário": job.get("wage", "N/A"),
+                    "localização": ", ".join([loc["name"] for loc in job.get("locations", [])]) if job.get("locations") else "N/A"
+                })
+    
+    print(f"The CSV '{filename}' file was created successfully!")
+
+
+@app.command(help="List the N most recent jobs published on itjobs.pt.")
+def top(
+    n: int = typer.Argument(..., help="Number of recent jobs to retrieve."),
+    create_csv: Annotated[bool, typer.Option(prompt="Do you want to create a CSV file with this data?")] = False):
+
+    """Example: >python file_name.py top 5"""
+
+    new_url = f"{url}?api_key={api_key}&limit={n}"
+    response = requests.get(new_url, headers={"User-Agent": "Mozilla/5.0"})
+    dados = response.json()
+
+    with open("dados_trabalhos.json", "w", encoding="utf-8") as file:
+        json.dump(dados, file, indent=4)
+
+    print(f"\n{n} most recent job titles:")
+    job_details = [
+        {
+            "titulo": job["title"],
+            "empresa": job.get("company", {}).get("name", "N/A"),
+            "descrição": job.get("body", "N/A"),
+            "data de publicação": job.get("publishedAt", "N/A"),
+            "salário": job.get("wage", "N/A"),
+            "localização": ", ".join([loc["name"] for loc in job.get("locations", [])]) if job.get("locations") else "N/A"
+        }
+        for job in dados.get("results", [])
+    ]
+
+    for job in job_details:
+        print(job["titulo"])
+
+    if create_csv:
+        export_csv({"results": job_details}, filename='recent_job_details.csv')
