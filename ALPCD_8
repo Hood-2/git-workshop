@@ -80,3 +80,52 @@ def top(
 
     if create_csv:
         export_csv({"results": job_details}, filename='recent_job_details.csv')
+
+@app.command(help="Search for job postings based on location, company, and number of jobs.")
+def search(location: str, company: str, num_jobs: int, create_csv: Annotated[bool, typer.Option(prompt="Do you want to create a CSV file with this data?")] = False):
+    """Example: >python file.py search "Lisboa" "KWAN" 5"""
+    job_details = []
+    page = 1
+    location = location.lower()
+    company = company.lower()
+
+    while len(job_details) < num_jobs:
+        job_data = obter_dados(page)  
+        if not job_data or "results" not in job_data:
+            break
+
+        for job in job_data["results"]:
+            job_location = [loc["name"].lower() for loc in job.get("locations", [])]
+            job_company = job.get("company", {}).get("name", "").lower()
+            job_types = [t["name"].lower() for t in job.get("types", [])]
+
+            if location in job_location and company in job_company and "full-time" in job_types:
+                job_details.append({
+                    "titulo": job["title"],
+                    "empresa": job.get("company", {}).get("name", "N/A"),
+                    "descrição": job.get("body", "N/A"),
+                    "data de publicação": job.get("publishedAt", "N/A"),
+                    "salário": job.get("wage", "N/A"),
+                    "localização": ", ".join([loc["name"] for loc in job.get("locations", [])]) if job.get("locations") else "N/A"
+                })
+                if len(job_details) >= num_jobs:
+                    break
+        page += 1
+
+    for job in job_details:
+        print(job["titulo"])
+
+    if create_csv:
+        export_csv({"results": job_details}, filename='company_full_time_jobs.csv')
+
+
+def obter_dados(page):
+    url = f'https://api.itjobs.pt/job/list.json?api_key={api_key}&page={page}'
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Erro na requisição: {response.status_code}")
+        return None
+
