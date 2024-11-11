@@ -128,4 +128,88 @@ def obter_dados(page):
     else:
         print(f"Erro na requisição: {response.status_code}")
         return None
+@app.command()
+def salary(jobid: str):
+    page = 1
+    while True:
+        dados = obter_dados(page)
+        if not dados or "results" not in dados:
+            break
 
+        job_found = False  # Flag to check if the job ID is found
+
+        for job in dados["results"]:
+            if job["id"] == int(jobid):
+                job_found = True  # Job ID found
+                # Check if the wage is available
+                if job["wage"]:
+                    print(f"Salary for job ID {jobid}: {job['wage']}")
+                    return job["wage"]
+                else:
+                    # If the wage is not provided, search for salary in the body
+                    body_text = job["body"]
+                    # Regex to find salary in body text (supports different formats)
+                    salary_match = re.search(r'\b(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(euros?|usd|dollars?|€|\$|eur|usd|dol)\b', body_text, re.IGNORECASE)
+                    if salary_match:
+                        salary_value = salary_match.group(0)
+                        print(f"Salary found in description for job ID {jobid}: {salary_value}")
+                        return salary_value
+                print("Salary not found in job ID:", jobid)
+                return "Salary not found"
+
+        page += 1
+
+    print("Job ID not found")
+    raise SystemExit 
+
+
+@app.command(help="List job titles that require specific skills within a given date range.")
+def skills(
+    skills: str, 
+    start_date: str,
+    end_date: str,
+    create_csv: Annotated[bool, typer.Option(prompt="Do you want to create a CSV file with this data?")] = False):
+    
+    """Example: >python file_name.py skills "Python, SQL" 2024-01-01 2024-12-31"""
+    
+    skill_list = [skill.strip().lower() for skill in skills.split(",")]
+    job_details = [] 
+    page = 1
+
+    date_istamp = time.mktime(time.strptime(start_date, '%Y-%m-%d'))
+    date_fstamp = time.mktime(time.strptime(end_date, '%Y-%m-%d'))
+
+    while True:
+        job_data = obter_dados(page)
+        if not job_data or "results" not in job_data:
+            break
+        
+        for job in job_data["results"]:
+            job_title = job.get("title", "")
+            job_body = job.get("body", "").lower()
+            job_date = job.get("publishedAt", "")
+
+            job_datestamp = time.mktime(time.strptime(job_date.split(" ")[0], '%Y-%m-%d'))
+            if not (date_istamp <= job_datestamp <= date_fstamp):
+                continue
+
+            if all(skill in job_body for skill in skill_list):
+                job_details.append({
+                    "titulo": job_title,
+                    "empresa": job.get("company", {}).get("name", "N/A"),
+                    "descrição": job.get("body", "N/A"),
+                    "data de publicação": job.get("publishedAt", "N/A"),
+                    "salário": job.get("wage", "N/A"),
+                    "localização": ", ".join([loc["name"] for loc in job.get("locations", [])]) if job.get("locations") else "N/A"
+                })
+
+        page += 1
+
+    typer.echo(json.dumps(job_details, indent=4))
+
+    if create_csv:
+        export_csv({"results": job_details}, filename="skills_job_details.csv")
+
+
+if __name__ == "__main__":
+    app()
