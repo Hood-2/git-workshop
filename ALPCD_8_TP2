@@ -1,1 +1,196 @@
+import requests
+import json
+import re
+from bs4 import BeautifulSoup
 
+API_KEY = 'b6e101bc38980bc8302263c0e78ff3f3'
+headers_api = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+}
+headers_amb = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0"
+    }
+
+def obter_dados(page):
+    url = f'https://api.itjobs.pt/job/list.json?api_key={API_KEY}&page={page}'
+
+    response = requests.get(url, headers=headers_api)
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Erro na requisição: {response.status_code}")
+        return None
+    
+def benefits_soup(company):
+    try :
+        url = f'https://www.ambitionbox.com/benefits/{company}-benefits'
+        response = requests.get(url, headers=headers_amb)
+
+        if response.status_code == 200:
+
+            return BeautifulSoup(response.text,'html.parser')
+        else:
+            print(f"Erro a obter website-benefits: {response.status_code}")
+            return None
+    except requests.exceptions.RequestException as e:
+            print(f"Erro a obter website-benefits: {response.status_code}")
+            return None
+    
+def obter_soup(company):
+    try :
+        url = f'https://www.ambitionbox.com/overview/{company}-overview'
+        response = requests.get(url, headers=headers_amb)
+        if response.status_code == 200:
+
+            return BeautifulSoup(response.text,'lxml')
+        else:
+            print(f"Erro a obter website: {response.status_code}")
+            return None
+    except requests.exceptions.RequestException as e:
+            print(f"Erro a obter website: {response.status_code}")
+            return None
+
+
+def get(job_id):
+    page = 1
+    while True:
+        dados = obter_dados(page)
+        if not dados or "results" not in dados:
+            break
+        for job in dados["results"]:
+            if job["id"] == job_id:
+                # Retornar o nome da empresa
+                company = job["company"]["name"]
+                print(company)
+                company_ = re.sub("\s+", "-", company.lower())
+                soup = obter_soup(company_)
+                if soup is None:
+                    return None
+                tag = soup.find('div', class_='css-146c3p1 text-primary-text font-pn-400 text-sm !w-[calc(100%-70px)] line-clamp-1')
+                exp = r'is rated (\d\.\d) out of 5 stars'
+                if tag is not None :
+                    rating = re.findall(exp, tag.text , flags=re.IGNORECASE)
+                soup_ben = benefits_soup(company_)
+                if soup_ben is None:
+                    return None
+                ben = soup_ben.find_all("div", class_="css-146c3p1 text-primary-text font-pn-600 text-[16px] leading-[24px] mb-1")
+                ben_desc = soup_ben.find_all("div", class_="css-146c3p1 text-neutral-500 font-pn-400 text-[16px] leading-[24px]")
+                ben_review = soup_ben.find_all("div" ,class_="css-146c3p1 text-[12px] font-pn-400 leading[1.33]")
+                ben_dic={}
+                beneficios = []
+                beneficios_desc = []
+                n = 0
+                if ben:
+                    for b in ben:
+                     beneficios.append(b.text)
+                if ben_review  and not ben:
+                    for b in ben_review:
+                        beneficios.append(b.text)
+                if ben_desc:
+                    for b in ben_desc:
+                        beneficios_desc.append(b.text)
+                        ben_dic[beneficios[n]] = beneficios_desc[n]
+                        n += 1
+                    beneficios = ben_dic
+                dess = soup.find('div', class_='css-146c3p1 font-pn-400 text-sm text-neutral mb-2') #Descriçao resumida
+                desb = soup.find('div', class_="text-sm font-pn-400 [&_ul]:list-disc [&_ol]:list-[auto] [&_ul]:ml-5 [&_ol]:ml-5") #Descriçao completa
+                if desb is not None:
+                    descrição = desb.text
+                else:
+                    if dess is not None:
+                        descrição = dess.text
+                job_data = {
+                            "id": job_id,
+                            "rating": float(rating[0]),  
+                            "ambition_box_description": descrição,
+                            "ambition_box_benefits": ben_dic
+                            }
+                print(json.dumps(job_data, indent=4))
+                return job_data
+        # Passa para a próxima página
+        page += 1
+    return "ID not found"
+
+def obter_soup_alt(company):
+    try :
+        url = f'https://pt.indeed.com/cmp/{company}'
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+
+            return BeautifulSoup(response.text,'lxml')
+        else:
+            print(f"Erro a obter website: {response.status_code}")
+            return None
+    except requests.exceptions.RequestException as e:
+            print(f"Erro a obter website: {response.status_code}")
+            return None
+def benefits_soup_alt(company):
+    try :
+        url = f"https://pt.indeed.com/cmp/{copmany}/reviews?ftopic=paybenefits"
+        response = requests.get(url, headers=headers_amb)
+        if response.status_code == 200:
+
+            return BeautifulSoup(response.text,'html.parser')
+        else:
+            print(f"Erro a obter website-benefits: {response.status_code}")
+            return None
+    except requests.exceptions.RequestException as e:
+            print(f"Erro a obter website-benefits: {response.status_code}")
+            return None
+
+    
+def get_alt(job_id):
+
+    """Example: >python file_name.py get 494386"""
+
+    page = 1
+    while True:
+        dados = obter_dados(page)
+        if not dados or "results" not in dados:
+            break
+        for job in dados["results"]:
+            if job["id"] == job_id:
+                # Retornar o nome da empresa
+                company = job["company"]["name"]
+                company_ = re.sub(r"\s+", "-", company)
+                soup = obter_soup_alt(company_)
+                rating = soup.find("span", class_="css-4f2law e1wnkr790").text
+                texto_div = soup.find('div', class_="css-9146s eu4oa1w0", attrs={"data-testid": "more-text"})
+                if texto_div:
+                # Buscar todos os parágrafos (<p>) dentro do div
+                    text = texto_div.find_all('p')
+                descriçao = []
+            for p in text:
+                descriçao.append(p.text)
+
+            soup_b = benefits_soup_alt(company_)
+            vantagens_div = soup_b.find_all('div', class_="css-zaij7l e1tiznh50", string="Vantagens")
+            beneficios = []
+            if vantagens_div:
+                #Procurar diretamente o elemento <span> dentro de vantagens_div
+                span_beneficio = vantagens_div.find('span', class_="css-15r9gu1 eu4oa1w0")
+            if span_beneficio:
+                for b in span_beneficio:
+                    beneficios.append(b.text)
+            job_data = {
+                            "id": job_id,
+                            "rating": float(rating[0]),  
+                            "ambition_box_description": descriçao,
+                            "ambition_box_benefits": beneficios
+                            }
+            print(json.dumps(job_data, indent=4))
+            return job_data
+        # Passa para a próxima página
+        page += 1
+    return "ID not found"
