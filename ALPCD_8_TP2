@@ -2,8 +2,18 @@ import requests
 import json
 import re
 from bs4 import BeautifulSoup
+import typer
+import requests
+import csv
+from typing import Annotated
+import time
 
-API_KEY = 'b6e101bc38980bc8302263c0e78ff3f3'
+app = typer.Typer()
+
+api_key = "b6e101bc38980bc8302263c0e78ff3f3"
+url = "https://api.itjobs.pt/job/list.json"
+response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+dados = response.json()
 headers_api = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
@@ -31,7 +41,39 @@ def obter_dados(page):
     else:
         print(f"Erro na requisição: {response.status_code}")
         return None
+
+def export_csv(data, filename="recent_jobs.csv"):
+    if isinstance(data, list):
+
+        if not data:
+            print("No data to export.")
+            return
+        
+        fieldnames = data[0].keys()
+    elif isinstance(data, dict) and "results" in data:
+
+        data = data["results"]
+        if not data:
+            print("No data to export.")
+            return
+        
+        fieldnames = data[0].keys()
+    else:
+        print("Invalid data format for CSV export.")
+        return
+
+    with open(filename, "w", newline='', encoding="utf-8") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        if isinstance(data, list):
+            writer.writerows(data)
+        else:
+            for job in data:
+                writer.writerow(job)
     
+    print(f"The CSV file '{filename}' was created successfully!")
+
 def benefits_soup(company):
     try :
         url = f'https://www.ambitionbox.com/benefits/{company}-benefits'
@@ -61,7 +103,42 @@ def obter_soup(company):
             print(f"Erro a obter website: {response.status_code}")
             return None
 
-@app.command()
+@app.command(help="List the N most recent jobs published on itjobs.pt.")
+def top(n: int, 
+        output_format: Annotated[str, typer.Argument(help="Specify 'csv' to create a CSV file.")] = None):
+
+    """Example: >python file_name.py top 5"""
+
+    new_url = f"{url}?api_key={api_key}&limit={n}"
+    response = requests.get(new_url, headers={"User-Agent": "Mozilla/5.0"})
+    dados = response.json()
+
+    print(f"\n{n} most recent job titles:")
+    job_details = [
+        {
+            "titulo": job["title"],
+            "empresa": job.get("company", {}).get("name", "N/A"),
+            "descrição": job.get("body", "N/A"),
+            "data de publicação": job.get("publishedAt", "N/A"),
+            "salário": job.get("wage", "N/A"),
+            "localização": ", ".join([loc["name"] for loc in job.get("locations", [])]) if job.get("locations") else "N/A"
+        }
+        for job in dados.get("results", [])
+    ]
+
+    for job in job_details:
+        print(job["titulo"])
+
+    if output_format == 'csv':
+        export_csv({"results": job_details}, filename='recent_job_details.csv')
+        print("CSV file 'recent_job_details.csv' created successfully.")
+
+    with open(f"{n}_recent_job_details.json", "w", encoding="utf-8") as file:
+        json.dump(dados, file, indent=4)
+    print(f"The JSON file '{n}_recent_job_details.json' was created successfully!")
+
+
+@app.command(help="Gives information about a wage of a certain job.")
 def salary(jobid: str):
     page = 1
     while True:
@@ -207,6 +284,46 @@ def get(job_id):
         # Passa para a próxima página
         page += 1
     return "ID not found"
+
+
+@app.command(help="List the number of job openings by title and location on itjobs.pt.")
+def statistics():
+    """Example: >python file_name.py statistics"""
+
+    job_counts = {}
+    page = 1
+    has_more_results = True
+
+    while has_more_results:
+        dados = obter_dados(page)
+        if dados is None or not dados.get("results"):
+            has_more_results = False
+            continue
+
+        for job in dados.get("results", []):
+            title = job["title"]
+            locations = ", ".join([loc["name"] for loc in job.get("locations", [])]) if job.get("locations") else "N/A"
+            key = (title, locations)
+
+            if key in job_counts:
+                job_counts[key] += 1
+            else:
+                job_counts[key] = 1
+
+        page += 1
+
+    aggregated_data = [
+        {"titulo": title, "localização": location, "número de vagas": count}
+        for (title, location), count in job_counts.items()
+    ]
+
+    if aggregated_data:
+        #fieldnames = ["titulo", "localização", "número de vagas"]
+        export_csv({"results": aggregated_data}, filename='job_openings.csv')
+        print(f"CSV file 'job_openings.csv' created successfully.")
+
+    else:
+        print("No data to export.")   
 
 def obter_soup_alt(company):
     try :
