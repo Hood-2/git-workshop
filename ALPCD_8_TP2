@@ -138,6 +138,52 @@ def top(n: int,
     print(f"The JSON file '{n}_recent_job_details.json' was created successfully!")
 
 
+@app.command(help="Search for job postings based on location, company, and number of jobs.")
+def search(
+    location: str, company: str, num_jobs: int, 
+    output_format: Annotated[str, typer.Argument(help="Specify 'csv' to create a CSV file.")] = None):
+
+    """Example: >python file.py search "Lisboa" "KWAN" 5"""
+    job_details = []
+    page = 1
+    location = location.lower()
+    company = company.lower()
+
+    while len(job_details) < num_jobs:
+        job_data = obter_dados(page)  
+        if not job_data or "results" not in job_data:
+            break
+
+        for job in job_data["results"]:
+            job_location = [loc["name"].lower() for loc in job.get("locations", [])]
+            job_company = job.get("company", {}).get("name", "").lower()
+            job_types = [t["name"].lower() for t in job.get("types", [])]
+
+            if location in job_location and company in job_company and "full-time" in job_types:
+                job_details.append({
+                    "titulo": job["title"],
+                    "empresa": job.get("company", {}).get("name", "N/A"),
+                    "descrição": job.get("body", "N/A"),
+                    "data de publicação": job.get("publishedAt", "N/A"),
+                    "salário": job.get("wage", "N/A"),
+                    "localização": ", ".join([loc["name"] for loc in job.get("locations", [])]) if job.get("locations") else "N/A"
+                })
+                if len(job_details) >= num_jobs:
+                    break
+        page += 1
+
+    for job in job_details:
+        print(job["titulo"])
+
+    if output_format == 'csv':
+        export_csv({"results": job_details}, filename='recent_job_details.csv')
+        print("CSV file 'recent_job_details.csv' created successfully.")
+    
+    with open(f"jobs_{location}_{company}.json", "w", encoding="utf-8") as file:
+        json.dump({"results": job_details}, file, ensure_ascii=False, indent=4)
+    print(f"The JSON file 'jobs_{location}_{company}.json' was created successfully!")
+
+
 @app.command(help="Gives information about a wage of a certain job.")
 def salary(jobid: str):
     page = 1
@@ -403,3 +449,40 @@ def get_alt(job_id):
         # Passa para a próxima página
         page += 1
     return "ID not found"
+
+
+@app.command()
+def list_skills(job_title: str):
+
+    job_title_formatted = job_title.replace(" ", "%20")
+    url = f"https://www.ambitionbox.com/jobs/search?tag={job_title_formatted}"
+    response = requests.get(url, headers=headers_amb)
+
+    if response.status_code != 200:
+        typer.echo("Erro no acesso à página.")
+
+        return
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    skills_section = soup.find('p', class_='body-medium sub-title', string='Key skills for the job')
+    if not skills_section:
+        typer.echo("Skills não encontradas.")
+
+        return
+
+    skills_div = skills_section.find_next_sibling('div', class_='show-flex chips-cont')
+    if not skills_div:
+        typer.echo("Skills não encontradas.")
+
+        return
+
+    skills = [skill.get_text(strip=True) for skill in skills_div.find_all('a', class_='body-medium chip')]
+    skill_counts = Counter(skills)
+    top_skills = skill_counts.most_common(10)
+
+    output = [{"skill": skill, "count": count} for skill, count in top_skills]
+    print(json.dumps(output, indent=4))
+
+
+if __name__ == "__main__":
+    app()
