@@ -225,7 +225,9 @@ def skills(
         json.dump({"results": job_details}, file, ensure_ascii=False, indent=4)
     print(f"The JSON file 'jobs_{skills}.json' was created successfully!")
 
+@app.command(help="Lists information about a specific jobID.")
 def get(job_id):
+    """Example: >python file_name.py get 494111"""
     page = 1
     while True:
         dados = obter_dados(page)
@@ -285,6 +287,11 @@ def get(job_id):
         page += 1
     return "ID not found"
 
+    if job_data:
+        export_csv({"results": [job_data]}, filename=f'jobid_{job_id}_information.csv')
+        print(f"CSV file 'jobid_{job_id}_information.csv' created successfully.")
+    else:
+        print(f"Job ID {job_id} not found.")
 
 @app.command(help="List the number of job openings by title and location on itjobs.pt.")
 def statistics():
@@ -321,7 +328,6 @@ def statistics():
         #fieldnames = ["titulo", "localização", "número de vagas"]
         export_csv({"results": aggregated_data}, filename='job_openings.csv')
         print(f"CSV file 'job_openings.csv' created successfully.")
-
     else:
         print("No data to export.")   
 
@@ -352,7 +358,7 @@ def benefits_soup_alt(company):
             print(f"Erro a obter website-benefits: {response.status_code}")
             return None
 
-    
+@app.command(help="Lists information about a specific jobID from an alternative website.")       
 def get_alt(job_id):
 
     """Example: >python file_name.py get 494386"""
