@@ -441,8 +441,8 @@ def get_alt(job_id):
             job_data = {
                             "id": job_id,
                             "rating": float(rating[0]),  
-                            "ambition_box_description": descriçao,
-                            "ambition_box_benefits": beneficios
+                            "indeed_description": descriçao,
+                            "indeed_benefits": beneficios
                             }
             print(json.dumps(job_data, indent=4))
             return job_data
